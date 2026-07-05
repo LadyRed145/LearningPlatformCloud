@@ -1,7 +1,20 @@
 services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq-learning
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: Admin12345
+    restart: "no"
+
   learningplatformcloud:
     image: ladyred/learningplatformcloud:latest
     container_name: learningplatformcloud
+    depends_on:
+      - rabbitmq
     ports:
       - "8081:8080"
     environment:
@@ -10,6 +23,10 @@ services:
       DB_PASSWORD: 'OracleCloud123'
       AWS_REGION: 'us-east-1'
       AWS_S3_BUCKET_NAME: 'learningplatformcloud-grupo13'
+      RABBITMQ_HOST: 'rabbitmq'
+      RABBITMQ_PORT: '5672'
+      RABBITMQ_USERNAME: 'admin'
+      RABBITMQ_PASSWORD: 'Admin12345'
     volumes:
       - "/home/natalia/Archivos/Desarrollo Cloud Native/Wallets Registradas/Wallet_Semana1:/app/wallet:ro"
     restart: "no"

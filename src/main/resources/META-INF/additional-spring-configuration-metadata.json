@@ -1,17 +1,34 @@
-{"properties": [
-  {
-    "name": "aws.s3.bucket-name",
-    "type": "java.lang.String",
-    "description": "Nombre del bucket AWS S3 utilizado para almacenar los resúmenes de inscripción."
-  },
-  {
-    "name": "aws.region",
-    "type": "java.lang.String",
-    "description": "Región AWS donde se encuentra desplegado el bucket S3."
-  },
-  {
-    "name": "azure.b2c.client-id",
-    "type": "java.lang.String",
-    "description": "A description for 'azure.b2c.client-id'"
-  }
-]}
+{
+  "properties": [
+    {
+      "name": "aws.s3.bucket-name",
+      "type": "java.lang.String",
+      "description": "Nombre del bucket AWS S3 utilizado para almacenar los resúmenes de inscripción."
+    },
+    {
+      "name": "aws.region",
+      "type": "java.lang.String",
+      "description": "Región AWS donde se encuentra desplegado el bucket S3."
+    },
+    {
+      "name": "azure.b2c.client-id",
+      "type": "java.lang.String",
+      "description": "Identificador de cliente de Azure AD B2C utilizado para validar tokens JWT."
+    },
+    {
+      "name": "app.rabbitmq.queue",
+      "type": "java.lang.String",
+      "description": "Nombre de la cola RabbitMQ utilizada para almacenar temporalmente los resúmenes de inscripción."
+    },
+    {
+      "name": "app.rabbitmq.exchange",
+      "type": "java.lang.String",
+      "description": "Nombre del exchange RabbitMQ utilizado para enrutar los mensajes de resumen."
+    },
+    {
+      "name": "app.rabbitmq.routing-key",
+      "type": "java.lang.String",
+      "description": "Clave de enrutamiento utilizada para enviar los resúmenes hacia la cola RabbitMQ."
+    }
+  ]
+}

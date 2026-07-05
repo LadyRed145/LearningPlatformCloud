@@ -17,15 +17,10 @@
     <version>0.0.1-SNAPSHOT</version>
 
     <name>Learning Platform Cloud</name>
-    <description>
-        Microservicio Cloud Native para gestión de cursos e inscripciones,
-        desarrollado con Spring Boot, Oracle Cloud, AWS S3, Docker, AWS API Gateway,
-        Azure AD B2C y CI/CD mediante GitHub Actions.
-    </description>
+    <description>Microservicio Cloud Native con Oracle Cloud, AWS S3, API Gateway, Azure AD B2C y RabbitMQ.</description>
 
     <properties>
         <java.version>17</java.version>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <oracle.jdbc.version>23.3.0.23.09</oracle.jdbc.version>
         <aws.sdk.version>2.25.60</aws.sdk.version>
     </properties>
@@ -36,6 +31,12 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- RabbitMQ / AMQP -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
         <!-- Spring Security -->
@@ -95,6 +96,12 @@
             <version>${oracle.jdbc.version}</version>
         </dependency>
 
+        <!-- Jackson Java Time para LocalDateTime en mensajes RabbitMQ -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.datatype</groupId>
+            <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -117,6 +124,13 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- RabbitMQ Testing -->
+        <dependency>
+            <groupId>org.springframework.amqp</groupId>
+            <artifactId>spring-rabbit-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <build>
@@ -126,15 +140,6 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
-
-                <configuration>
-                    <excludes>
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
-                    </excludes>
-                </configuration>
             </plugin>
 
             <!-- Maven Compiler -->

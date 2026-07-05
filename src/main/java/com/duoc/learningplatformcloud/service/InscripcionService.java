@@ -28,25 +28,32 @@ public class InscripcionService {
     public List<InscripcionResponse> listarInscripciones() {
         return inscripcionRepository.findAll()
                 .stream()
-                .sorted(Comparator.comparing(Inscripcion::getId))
-                .map(this::mapearInscripcionResponse)
+                .sorted(Comparator.comparing(inscripcion -> Objects.requireNonNull(inscripcion.getId())))
+                .map(inscripcion -> mapearInscripcionResponse(inscripcion))
                 .toList();
     }
 
     @Transactional
     public InscripcionResponse inscribirEstudiante(InscripcionRequest request) {
-        List<Long> cursosIds = Objects.requireNonNull(request.cursosIds());
+        Objects.requireNonNull(request, "La solicitud de inscripción no puede ser nula.");
 
-        List<Curso> cursos = Objects.requireNonNull(
-                cursoRepository.findAllById(cursosIds)
+        List<Long> cursosIds = Objects.requireNonNull(
+                request.cursosIds(),
+                "La lista de cursos no puede ser nula."
         );
+
+        if (cursosIds.isEmpty()) {
+            throw new IllegalArgumentException("Debe seleccionar al menos un curso.");
+        }
+
+        List<Curso> cursos = cursoRepository.findAllById(cursosIds);
 
         if (cursos.size() != cursosIds.size()) {
             throw new RecursoNoEncontradoException("Uno o más cursos seleccionados no existen.");
         }
 
         double total = cursos.stream()
-                .mapToDouble(Curso::getCosto)
+                .mapToDouble(curso -> Objects.requireNonNull(curso.getCosto()))
                 .sum();
 
         Inscripcion inscripcion = Inscripcion.builder()
@@ -64,9 +71,7 @@ public class InscripcionService {
 
         inscripcion.getDetalles().addAll(detalles);
 
-        Inscripcion inscripcionGuardada = Objects.requireNonNull(
-                inscripcionRepository.save(inscripcion)
-        );
+        Inscripcion inscripcionGuardada = inscripcionRepository.save(inscripcion);
 
         return mapearInscripcionResponse(inscripcionGuardada);
     }
