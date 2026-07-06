@@ -22,6 +22,8 @@ public class S3ResumenService {
     private static final String CONTENT_TYPE_TEXT = "text/plain; charset=utf-8";
     private static final String CONTENT_TYPE_JSON = "application/json; charset=utf-8";
 
+    public static final String KEY_EVIDENCIA_RABBITMQ = "mq/evidencia-rabbitmq.txt";
+
     private final S3Client s3Client;
 
     @Value("${aws.s3.bucket-name}")
@@ -60,6 +62,10 @@ public class S3ResumenService {
         return key;
     }
 
+    public String sobrescribirEvidenciaRabbitMq(String contenidoTexto) {
+        return subirTexto(KEY_EVIDENCIA_RABBITMQ, contenidoTexto);
+    }
+
     public String subirTexto(String key, String contenido) {
         return subirContenido(key, contenido, CONTENT_TYPE_TEXT);
     }
@@ -76,7 +82,7 @@ public class S3ResumenService {
         PutObjectRequest request = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(key)
-                .contentType(contentType)
+                .contentType(contentType == null || contentType.isBlank() ? CONTENT_TYPE_TEXT : contentType)
                 .build();
 
         s3Client.putObject(
