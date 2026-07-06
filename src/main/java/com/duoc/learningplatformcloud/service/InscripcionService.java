@@ -21,6 +21,7 @@ import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class InscripcionService {
 
     private final CursoRepository cursoRepository;
@@ -61,17 +62,16 @@ public class InscripcionService {
                 .total(total)
                 .build();
 
-        cursosOrdenados.forEach(curso -> {
+        for (Curso curso : cursosOrdenados) {
             DetalleInscripcion detalle = DetalleInscripcion.builder()
                     .curso(curso)
-                    .costoCurso(curso.getCosto())
+                    .costoCurso(Objects.requireNonNullElse(curso.getCosto(), 0.0))
                     .build();
 
             inscripcion.agregarDetalle(detalle);
-        });
+        }
 
         Inscripcion inscripcionGuardada = inscripcionRepository.saveAndFlush(inscripcion);
-
         return mapearInscripcionResponse(inscripcionGuardada);
     }
 
