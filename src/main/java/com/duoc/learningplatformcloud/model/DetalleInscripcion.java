@@ -4,7 +4,15 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "detalle_inscripcion")
+@Table(
+        name = "detalle_inscripcion",
+        uniqueConstraints = {
+                @UniqueConstraint(
+                        name = "uk_detalle_inscripcion_curso",
+                        columnNames = {"inscripcion_id", "curso_id"}
+                )
+        }
+)
 @Getter
 @Setter
 @NoArgsConstructor
@@ -16,14 +24,14 @@ public class DetalleInscripcion {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(optional = false)
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "inscripcion_id", nullable = false)
     private Inscripcion inscripcion;
 
-    @ManyToOne(optional = false)
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "curso_id", nullable = false)
     private Curso curso;
 
-    @Column(nullable = false)
+    @Column(name = "costo_curso", nullable = false)
     private Double costoCurso;
 }

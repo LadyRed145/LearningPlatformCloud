@@ -1,7 +1,9 @@
 package com.duoc.learningplatformcloud.model;
 
 import jakarta.persistence.*;
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -30,7 +32,7 @@ public class Inscripcion {
     @Column(nullable = false)
     private Double total;
 
-    @Column(nullable = false)
+    @Column(name = "fecha_inscripcion", nullable = false)
     private LocalDateTime fechaInscripcion;
 
     @OneToMany(mappedBy = "inscripcion", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -42,5 +44,10 @@ public class Inscripcion {
         if (fechaInscripcion == null) {
             fechaInscripcion = LocalDateTime.now();
         }
+    }
+
+    public void agregarDetalle(DetalleInscripcion detalle) {
+        detalle.setInscripcion(this);
+        detalles.add(detalle);
     }
 }
