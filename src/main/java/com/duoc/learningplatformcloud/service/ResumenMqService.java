@@ -36,6 +36,7 @@ public class ResumenMqService {
     private static final String PREFIJO_INSTRUCTOR = "Instructor: ";
     private static final String PREFIJO_DURACION = "Duración: ";
     private static final String PREFIJO_COSTO = "Costo: $";
+    private static final String ESTADO_CONSUMIDO = "CONSUMIDO_GUARDADO";
 
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
@@ -86,17 +87,19 @@ public class ResumenMqService {
 
         ResumenMqMessage mensaje = convertirMensajeDesdeCola(recibido);
 
-        ResumenCompraMq resumen = ResumenCompraMq.builder()
-                .inscripcionId(mensaje.inscripcionId())
-                .estudiante(mensaje.estudiante())
-                .total(mensaje.total())
-                .cursosInscritos(String.join(System.lineSeparator(), mensaje.cursos()))
-                .contenidoResumen(mensaje.contenidoResumen())
-                .fechaInscripcion(mensaje.fechaInscripcion())
-                .fechaEnvioMq(mensaje.fechaEnvio())
-                .fechaConsumoMq(LocalDateTime.now())
-                .estado("CONSUMIDO_GUARDADO")
-                .build();
+        ResumenCompraMq resumen = resumenCompraMqRepository
+                .findByInscripcionId(mensaje.inscripcionId())
+                .orElseGet(ResumenCompraMq::new);
+
+        resumen.setInscripcionId(mensaje.inscripcionId());
+        resumen.setEstudiante(mensaje.estudiante());
+        resumen.setTotal(mensaje.total());
+        resumen.setCursosInscritos(String.join(System.lineSeparator(), mensaje.cursos()));
+        resumen.setContenidoResumen(mensaje.contenidoResumen());
+        resumen.setFechaInscripcion(mensaje.fechaInscripcion());
+        resumen.setFechaEnvioMq(mensaje.fechaEnvio());
+        resumen.setFechaConsumoMq(LocalDateTime.now());
+        resumen.setEstado(ESTADO_CONSUMIDO);
 
         ResumenCompraMq resumenGuardado = resumenCompraMqRepository.save(resumen);
 
@@ -183,7 +186,7 @@ public class ResumenMqService {
     private String construirEvidenciaConsumo(ResumenCompraMq resumen) {
         StringBuilder evidencia = construirCabeceraEvidencia(
                 "POST /api/mq/resumenes/consumir",
-                "CONSUMIR RESUMEN DESDE RABBITMQ Y GUARDAR EN ORACLE"
+                "CONSUMIR RESUMEN DESDE RABBITMQ Y GUARDAR/ACTUALIZAR EN ORACLE"
         );
 
         evidencia.append("ID resumen guardado: ").append(resumen.getId()).append(System.lineSeparator());
@@ -204,7 +207,7 @@ public class ResumenMqService {
         }
 
         evidencia.append(System.lineSeparator());
-        evidencia.append("Resultado: Resumen consumido desde RabbitMQ y guardado en Oracle Cloud.").append(System.lineSeparator());
+        evidencia.append("Resultado: Resumen consumido desde RabbitMQ y guardado/actualizado en Oracle Cloud.").append(System.lineSeparator());
 
         return evidencia.toString();
     }
