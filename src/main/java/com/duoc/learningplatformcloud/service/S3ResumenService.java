@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.s3.model.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 
 @Service
@@ -20,9 +21,15 @@ import java.util.Objects;
 public class S3ResumenService {
 
     private static final String CONTENT_TYPE_TEXT = "text/plain; charset=utf-8";
-    private static final String CONTENT_TYPE_JSON = "application/json; charset=utf-8";
 
     public static final String KEY_EVIDENCIA_RABBITMQ = "mq/evidencia-rabbitmq.txt";
+
+    private static final List<String> KEYS_RABBITMQ_OBSOLETAS = List.of(
+            "mq/ultimo-envio.json",
+            "mq/estado-cola.json",
+            "mq/ultimo-consumo.json",
+            "mq/resumenes-consumidos.json"
+    );
 
     private final S3Client s3Client;
 
@@ -63,18 +70,11 @@ public class S3ResumenService {
     }
 
     public String sobrescribirEvidenciaRabbitMq(String contenidoTexto) {
+        eliminarEvidenciasRabbitMqObsoletas();
         return subirTexto(KEY_EVIDENCIA_RABBITMQ, contenidoTexto);
     }
 
     public String subirTexto(String key, String contenido) {
-        return subirContenido(key, contenido, CONTENT_TYPE_TEXT);
-    }
-
-    public String subirJson(String key, String contenidoJson) {
-        return subirContenido(key, contenidoJson, CONTENT_TYPE_JSON);
-    }
-
-    public String subirContenido(String key, String contenido, String contentType) {
         validarKey(key);
 
         String contenidoSeguro = Objects.requireNonNullElse(contenido, "");
@@ -82,7 +82,7 @@ public class S3ResumenService {
         PutObjectRequest request = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(key)
-                .contentType(contentType == null || contentType.isBlank() ? CONTENT_TYPE_TEXT : contentType)
+                .contentType(CONTENT_TYPE_TEXT)
                 .build();
 
         s3Client.putObject(
@@ -142,6 +142,26 @@ public class S3ResumenService {
 
     private String construirKey(Long resumenId) {
         return resumenId + "/" + construirNombreArchivo(resumenId);
+    }
+
+    private void eliminarEvidenciasRabbitMqObsoletas() {
+        KEYS_RABBITMQ_OBSOLETAS.forEach(this::eliminarObjetoSiExiste);
+    }
+
+    private void eliminarObjetoSiExiste(String key) {
+        try {
+            DeleteObjectRequest request = DeleteObjectRequest.builder()
+                    .bucket(bucketName)
+                    .key(key)
+                    .build();
+
+            s3Client.deleteObject(request);
+
+        } catch (S3Exception ex) {
+            if (ex.statusCode() != 404) {
+                throw ex;
+            }
+        }
     }
 
     private void validarKey(String key) {

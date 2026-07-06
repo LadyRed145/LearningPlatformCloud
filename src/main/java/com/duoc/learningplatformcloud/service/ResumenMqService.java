@@ -37,12 +37,6 @@ public class ResumenMqService {
     private static final String PREFIJO_DURACION = "Duración: ";
     private static final String PREFIJO_COSTO = "Costo: $";
 
-    private static final String S3_KEY_ULTIMO_ENVIO = "mq/ultimo-envio.json";
-    private static final String S3_KEY_ESTADO_COLA = "mq/estado-cola.json";
-    private static final String S3_KEY_ULTIMO_CONSUMO = "mq/ultimo-consumo.json";
-    private static final String S3_KEY_RESUMENES_CONSUMIDOS = "mq/resumenes-consumidos.json";
-    private static final String S3_KEY_EVIDENCIA_RABBITMQ = "mq/evidencia-rabbitmq.txt";
-
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final InscripcionRepository inscripcionRepository;
@@ -75,12 +69,7 @@ public class ResumenMqService {
                 }
         );
 
-        Map<String, Object> respuestaEnvio = construirRespuestaEnvio(mensaje);
-        Map<String, Object> estadoCola = consultarEstadoCola();
-
-        subirJsonS3(S3_KEY_ULTIMO_ENVIO, respuestaEnvio);
-        subirJsonS3(S3_KEY_ESTADO_COLA, estadoCola);
-        subirTextoS3(S3_KEY_EVIDENCIA_RABBITMQ, construirEvidenciaRabbitMq());
+        sobrescribirEvidenciaRabbitMq(construirEvidenciaEnvio(mensaje));
 
         return mensaje;
     }
@@ -111,14 +100,7 @@ public class ResumenMqService {
 
         ResumenCompraMq resumenGuardado = resumenCompraMqRepository.save(resumen);
 
-        Map<String, Object> respuestaConsumo = construirRespuestaConsumo(resumenGuardado);
-        List<ResumenMqResponse> resumenes = obtenerResumenesGuardadosOrdenados();
-        Map<String, Object> estadoCola = consultarEstadoCola();
-
-        subirJsonS3(S3_KEY_ULTIMO_CONSUMO, respuestaConsumo);
-        subirJsonS3(S3_KEY_RESUMENES_CONSUMIDOS, resumenes);
-        subirJsonS3(S3_KEY_ESTADO_COLA, estadoCola);
-        subirTextoS3(S3_KEY_EVIDENCIA_RABBITMQ, construirEvidenciaRabbitMq());
+        sobrescribirEvidenciaRabbitMq(construirEvidenciaConsumo(resumenGuardado));
 
         return resumenGuardado;
     }
@@ -127,8 +109,7 @@ public class ResumenMqService {
     public List<ResumenMqResponse> listarResumenesGuardados() {
         List<ResumenMqResponse> resumenes = obtenerResumenesGuardadosOrdenados();
 
-        subirJsonS3(S3_KEY_RESUMENES_CONSUMIDOS, resumenes);
-        subirTextoS3(S3_KEY_EVIDENCIA_RABBITMQ, construirEvidenciaRabbitMq());
+        sobrescribirEvidenciaRabbitMq(construirEvidenciaListado(resumenes));
 
         return resumenes;
     }
@@ -136,19 +117,14 @@ public class ResumenMqService {
     public Map<String, Object> estadoCola() {
         Map<String, Object> estadoCola = consultarEstadoCola();
 
-        subirJsonS3(S3_KEY_ESTADO_COLA, estadoCola);
-        subirTextoS3(S3_KEY_EVIDENCIA_RABBITMQ, construirEvidenciaRabbitMq());
+        sobrescribirEvidenciaRabbitMq(construirEvidenciaEstadoCola(estadoCola));
 
         return estadoCola;
     }
 
     public Map<String, String> keysS3RabbitMq() {
         return Map.of(
-                "ultimoEnvio", S3_KEY_ULTIMO_ENVIO,
-                "estadoCola", S3_KEY_ESTADO_COLA,
-                "ultimoConsumo", S3_KEY_ULTIMO_CONSUMO,
-                "resumenesConsumidos", S3_KEY_RESUMENES_CONSUMIDOS,
-                "evidenciaRabbitMq", S3_KEY_EVIDENCIA_RABBITMQ
+                "evidenciaRabbitMq", S3ResumenService.KEY_EVIDENCIA_RABBITMQ
         );
     }
 
@@ -173,79 +149,150 @@ public class ResumenMqService {
         estado.put("queue", queueName);
         estado.put("mensajesPendientes", Objects.requireNonNullElse(cantidad, 0L));
         estado.put("estado", "OK");
-        estado.put("fechaActualizacionS3", LocalDateTime.now());
+        estado.put("fechaConsulta", LocalDateTime.now());
 
         return estado;
     }
 
-    private Map<String, Object> construirRespuestaEnvio(ResumenMqMessage mensaje) {
-        Map<String, Object> respuesta = new LinkedHashMap<>();
-        respuesta.put("mensaje", "Resumen de inscripción enviado correctamente a RabbitMQ.");
-        respuesta.put("accion", "ENVIAR_COLA_MQ");
-        respuesta.put("cola", queueName);
-        respuesta.put("exchange", exchangeName);
-        respuesta.put("routingKey", routingKey);
-        respuesta.put("inscripcionId", mensaje.inscripcionId());
-        respuesta.put("estudiante", mensaje.estudiante());
-        respuesta.put("total", mensaje.total());
-        respuesta.put("fechaEnvio", mensaje.fechaEnvio());
-        respuesta.put("s3Actualizado", true);
-        respuesta.put("s3Key", S3_KEY_ULTIMO_ENVIO);
-
-        return respuesta;
+    private void sobrescribirEvidenciaRabbitMq(String contenido) {
+        s3ResumenService.sobrescribirEvidenciaRabbitMq(contenido);
     }
 
-    private Map<String, Object> construirRespuestaConsumo(ResumenCompraMq resumenGuardado) {
-        Map<String, Object> respuesta = new LinkedHashMap<>();
-        respuesta.put("mensaje", "Resumen consumido desde RabbitMQ y guardado en Oracle Cloud.");
-        respuesta.put("accion", "CONSUMIR_COLA_GUARDAR_ORACLE");
-        respuesta.put("idResumenGuardado", resumenGuardado.getId());
-        respuesta.put("inscripcionId", resumenGuardado.getInscripcionId());
-        respuesta.put("estudiante", resumenGuardado.getEstudiante());
-        respuesta.put("total", resumenGuardado.getTotal());
-        respuesta.put("estado", resumenGuardado.getEstado());
-        respuesta.put("fechaConsumoMq", resumenGuardado.getFechaConsumoMq());
-        respuesta.put("s3Actualizado", true);
-        respuesta.put("s3Key", S3_KEY_ULTIMO_CONSUMO);
+    private String construirEvidenciaEnvio(ResumenMqMessage mensaje) {
+        StringBuilder evidencia = construirCabeceraEvidencia(
+                "POST /api/mq/resumenes/" + mensaje.inscripcionId() + "/enviar",
+                "ENVIAR RESUMEN A RABBITMQ"
+        );
 
-        return respuesta;
-    }
-
-    private String construirEvidenciaRabbitMq() {
-        StringBuilder evidencia = new StringBuilder();
-
-        evidencia.append("EVIDENCIA RABBITMQ + ORACLE + S3").append(System.lineSeparator());
-        evidencia.append("================================").append(System.lineSeparator());
-        evidencia.append("Fecha actualización: ").append(LocalDateTime.now()).append(System.lineSeparator());
-        evidencia.append("Exchange: ").append(exchangeName).append(System.lineSeparator());
-        evidencia.append("Routing key: ").append(routingKey).append(System.lineSeparator());
-        evidencia.append("Queue: ").append(queueName).append(System.lineSeparator());
+        evidencia.append("Inscripción ID: ").append(mensaje.inscripcionId()).append(System.lineSeparator());
+        evidencia.append("Estudiante: ").append(mensaje.estudiante()).append(System.lineSeparator());
+        evidencia.append("Total: $").append(mensaje.total()).append(System.lineSeparator());
+        evidencia.append("Fecha inscripción: ").append(mensaje.fechaInscripcion()).append(System.lineSeparator());
+        evidencia.append("Fecha envío MQ: ").append(mensaje.fechaEnvio()).append(System.lineSeparator());
         evidencia.append(System.lineSeparator());
-        evidencia.append("Archivos sincronizados en S3:").append(System.lineSeparator());
-        evidencia.append("- ").append(S3_KEY_ULTIMO_ENVIO).append(System.lineSeparator());
-        evidencia.append("- ").append(S3_KEY_ESTADO_COLA).append(System.lineSeparator());
-        evidencia.append("- ").append(S3_KEY_ULTIMO_CONSUMO).append(System.lineSeparator());
-        evidencia.append("- ").append(S3_KEY_RESUMENES_CONSUMIDOS).append(System.lineSeparator());
-        evidencia.append("- ").append(S3_KEY_EVIDENCIA_RABBITMQ).append(System.lineSeparator());
+
+        evidencia.append("Cursos enviados:").append(System.lineSeparator());
+        mensaje.cursos().forEach(curso -> evidencia.append("- ").append(curso).append(System.lineSeparator()));
+
+        evidencia.append(System.lineSeparator());
+        evidencia.append("Resultado: Resumen enviado correctamente a RabbitMQ.").append(System.lineSeparator());
 
         return evidencia.toString();
     }
 
-    private void subirJsonS3(String key, Object contenido) {
-        try {
-            String json = objectMapper
-                    .writerWithDefaultPrettyPrinter()
-                    .writeValueAsString(contenido);
+    private String construirEvidenciaConsumo(ResumenCompraMq resumen) {
+        StringBuilder evidencia = construirCabeceraEvidencia(
+                "POST /api/mq/resumenes/consumir",
+                "CONSUMIR RESUMEN DESDE RABBITMQ Y GUARDAR EN ORACLE"
+        );
 
-            s3ResumenService.subirJson(key, json);
+        evidencia.append("ID resumen guardado: ").append(resumen.getId()).append(System.lineSeparator());
+        evidencia.append("Inscripción ID: ").append(resumen.getInscripcionId()).append(System.lineSeparator());
+        evidencia.append("Estudiante: ").append(resumen.getEstudiante()).append(System.lineSeparator());
+        evidencia.append("Total: $").append(resumen.getTotal()).append(System.lineSeparator());
+        evidencia.append("Estado: ").append(resumen.getEstado()).append(System.lineSeparator());
+        evidencia.append("Fecha inscripción: ").append(resumen.getFechaInscripcion()).append(System.lineSeparator());
+        evidencia.append("Fecha envío MQ: ").append(resumen.getFechaEnvioMq()).append(System.lineSeparator());
+        evidencia.append("Fecha consumo MQ: ").append(resumen.getFechaConsumoMq()).append(System.lineSeparator());
+        evidencia.append(System.lineSeparator());
 
-        } catch (JsonProcessingException ex) {
-            throw new IllegalStateException("No fue posible generar el JSON para sincronizar S3: " + key, ex);
+        evidencia.append("Cursos consumidos:").append(System.lineSeparator());
+        if (resumen.getCursosInscritos() != null && !resumen.getCursosInscritos().isBlank()) {
+            resumen.getCursosInscritos()
+                    .lines()
+                    .forEach(curso -> evidencia.append("- ").append(curso).append(System.lineSeparator()));
         }
+
+        evidencia.append(System.lineSeparator());
+        evidencia.append("Resultado: Resumen consumido desde RabbitMQ y guardado en Oracle Cloud.").append(System.lineSeparator());
+
+        return evidencia.toString();
     }
 
-    private void subirTextoS3(String key, String contenido) {
-        s3ResumenService.subirTexto(key, contenido);
+    private String construirEvidenciaListado(List<ResumenMqResponse> resumenes) {
+        StringBuilder evidencia = construirCabeceraEvidencia(
+                "GET /api/mq/resumenes",
+                "LISTAR RESÚMENES CONSUMIDOS"
+        );
+
+        evidencia.append("Total de resúmenes guardados: ").append(resumenes.size()).append(System.lineSeparator());
+        evidencia.append(System.lineSeparator());
+
+        if (resumenes.isEmpty()) {
+            evidencia.append("No existen resúmenes consumidos guardados en Oracle Cloud.").append(System.lineSeparator());
+            return evidencia.toString();
+        }
+
+        for (ResumenMqResponse resumen : resumenes) {
+            evidencia.append("Resumen guardado #").append(resumen.id()).append(System.lineSeparator());
+            evidencia.append("--------------------------------").append(System.lineSeparator());
+            evidencia.append("Inscripción ID: ").append(resumen.inscripcionId()).append(System.lineSeparator());
+            evidencia.append("Estudiante: ").append(resumen.estudiante()).append(System.lineSeparator());
+            evidencia.append("Fecha inscripción: ").append(resumen.fechaInscripcion()).append(System.lineSeparator());
+            evidencia.append("Total: $").append(resumen.total()).append(System.lineSeparator());
+
+            evidencia.append("Cursos:").append(System.lineSeparator());
+            resumen.cursos().forEach(curso -> evidencia
+                    .append("- ")
+                    .append(curso.nombre())
+                    .append(" | Instructor: ")
+                    .append(curso.instructor())
+                    .append(" | Duración: ")
+                    .append(curso.duracionHoras())
+                    .append(" horas")
+                    .append(" | Costo: $")
+                    .append(curso.costo())
+                    .append(System.lineSeparator()));
+
+            evidencia.append("Mensajería:").append(System.lineSeparator());
+            evidencia.append("- Exchange: ").append(resumen.mensajeria().exchange()).append(System.lineSeparator());
+            evidencia.append("- Routing key: ").append(resumen.mensajeria().routingKey()).append(System.lineSeparator());
+            evidencia.append("- Queue: ").append(resumen.mensajeria().queue()).append(System.lineSeparator());
+            evidencia.append("- Estado: ").append(resumen.mensajeria().estado()).append(System.lineSeparator());
+            evidencia.append("- Fecha envío MQ: ").append(resumen.mensajeria().fechaEnvio()).append(System.lineSeparator());
+            evidencia.append("- Fecha consumo MQ: ").append(resumen.mensajeria().fechaConsumo()).append(System.lineSeparator());
+            evidencia.append(System.lineSeparator());
+        }
+
+        return evidencia.toString();
+    }
+
+    private String construirEvidenciaEstadoCola(Map<String, Object> estadoCola) {
+        StringBuilder evidencia = construirCabeceraEvidencia(
+                "GET /api/mq/resumenes/estado-cola",
+                "CONSULTAR ESTADO DE COLA RABBITMQ"
+        );
+
+        evidencia.append("Exchange: ").append(estadoCola.get("exchange")).append(System.lineSeparator());
+        evidencia.append("Routing key: ").append(estadoCola.get("routingKey")).append(System.lineSeparator());
+        evidencia.append("Queue: ").append(estadoCola.get("queue")).append(System.lineSeparator());
+        evidencia.append("Mensajes pendientes: ").append(estadoCola.get("mensajesPendientes")).append(System.lineSeparator());
+        evidencia.append("Estado: ").append(estadoCola.get("estado")).append(System.lineSeparator());
+        evidencia.append("Fecha consulta: ").append(estadoCola.get("fechaConsulta")).append(System.lineSeparator());
+
+        return evidencia.toString();
+    }
+
+    private StringBuilder construirCabeceraEvidencia(String endpoint, String accion) {
+        StringBuilder evidencia = new StringBuilder();
+
+        evidencia.append("EVIDENCIA RABBITMQ + ORACLE + S3").append(System.lineSeparator());
+        evidencia.append("================================").append(System.lineSeparator());
+        evidencia.append("Última actualización: ").append(LocalDateTime.now()).append(System.lineSeparator());
+        evidencia.append("Endpoint ejecutado: ").append(endpoint).append(System.lineSeparator());
+        evidencia.append("Acción ejecutada: ").append(accion).append(System.lineSeparator());
+        evidencia.append("Archivo S3 sobrescrito: ").append(S3ResumenService.KEY_EVIDENCIA_RABBITMQ).append(System.lineSeparator());
+        evidencia.append(System.lineSeparator());
+        evidencia.append("Configuración RabbitMQ").append(System.lineSeparator());
+        evidencia.append("----------------------").append(System.lineSeparator());
+        evidencia.append("Exchange: ").append(exchangeName).append(System.lineSeparator());
+        evidencia.append("Routing key: ").append(routingKey).append(System.lineSeparator());
+        evidencia.append("Queue: ").append(queueName).append(System.lineSeparator());
+        evidencia.append(System.lineSeparator());
+        evidencia.append("Detalle del evento").append(System.lineSeparator());
+        evidencia.append("------------------").append(System.lineSeparator());
+
+        return evidencia;
     }
 
     private Inscripcion buscarInscripcion(Long inscripcionId) {
