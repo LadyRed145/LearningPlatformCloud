@@ -7,12 +7,16 @@ import com.duoc.learningplatformcloud.model.Inscripcion;
 import com.duoc.learningplatformcloud.model.ResumenCompraMq;
 import com.duoc.learningplatformcloud.repository.InscripcionRepository;
 import com.duoc.learningplatformcloud.repository.ResumenCompraMqRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
@@ -21,9 +25,11 @@ import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
+@SuppressWarnings("null")
 public class ResumenMqService {
 
     private final RabbitTemplate rabbitTemplate;
+    private final ObjectMapper objectMapper;
     private final InscripcionRepository inscripcionRepository;
     private final ResumenCompraMqRepository resumenCompraMqRepository;
 
@@ -40,13 +46,22 @@ public class ResumenMqService {
     public ResumenMqMessage enviarResumenACola(Long inscripcionId) {
         Inscripcion inscripcion = buscarInscripcion(inscripcionId);
         ResumenMqMessage mensaje = construirMensaje(inscripcion);
+        String mensajeJson = convertirMensajeAJson(mensaje);
 
-        rabbitTemplate.convertAndSend(exchangeName, routingKey, mensaje);
+        rabbitTemplate.convertAndSend(
+                exchangeName,
+                routingKey,
+                mensajeJson,
+                message -> {
+                    message.getMessageProperties().setContentType(MessageProperties.CONTENT_TYPE_JSON);
+                    message.getMessageProperties().setType("ResumenMqMessage");
+                    return message;
+                }
+        );
 
         return mensaje;
     }
 
-    @SuppressWarnings("null")
     @Transactional
     public ResumenCompraMq consumirResumenDesdeCola() {
         Object recibido = rabbitTemplate.receiveAndConvert(queueName);
@@ -57,11 +72,7 @@ public class ResumenMqService {
             );
         }
 
-        if (!(recibido instanceof ResumenMqMessage mensaje)) {
-            throw new IllegalStateException(
-                    "El mensaje recibido desde RabbitMQ tiene un formato inválido."
-            );
-        }
+        ResumenMqMessage mensaje = convertirMensajeDesdeCola(recibido);
 
         ResumenCompraMq resumen = ResumenCompraMq.builder()
                 .inscripcionId(mensaje.inscripcionId())
@@ -83,7 +94,7 @@ public class ResumenMqService {
         return resumenCompraMqRepository.findAll()
                 .stream()
                 .sorted(Comparator.comparing(
-                        resumen -> Objects.requireNonNull(resumen.getId())
+                        resumen -> Objects.requireNonNullElse(resumen.getId(), 0L)
                 ))
                 .toList();
     }
@@ -116,7 +127,7 @@ public class ResumenMqService {
     private ResumenMqMessage construirMensaje(Inscripcion inscripcion) {
         List<String> cursos = inscripcion.getDetalles()
                 .stream()
-                .map(detalle -> construirLineaCurso(detalle))
+                .map(this::construirLineaCurso)
                 .toList();
 
         String contenido = construirContenidoResumen(inscripcion, cursos);
@@ -157,5 +168,37 @@ public class ResumenMqService {
         resumen.append("Evento: Mensaje enviado a RabbitMQ para consumo asíncrono.").append(System.lineSeparator());
 
         return resumen.toString();
+    }
+
+    private String convertirMensajeAJson(ResumenMqMessage mensaje) {
+        try {
+            return objectMapper.writeValueAsString(mensaje);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("No fue posible convertir el mensaje RabbitMQ a JSON.", ex);
+        }
+    }
+
+    private ResumenMqMessage convertirMensajeDesdeCola(Object recibido) {
+        try {
+            if (recibido instanceof ResumenMqMessage mensaje) {
+                return mensaje;
+            }
+
+            if (recibido instanceof String mensajeJson) {
+                return objectMapper.readValue(mensajeJson, ResumenMqMessage.class);
+            }
+
+            if (recibido instanceof byte[] bytes) {
+                String mensajeJson = new String(bytes, StandardCharsets.UTF_8);
+                return objectMapper.readValue(mensajeJson, ResumenMqMessage.class);
+            }
+
+            throw new IllegalStateException(
+                    "El mensaje recibido desde RabbitMQ tiene un formato inválido: "
+                            + recibido.getClass().getName()
+            );
+        } catch (JsonProcessingException ex) {
+            throw new IllegalStateException("No fue posible leer el mensaje JSON recibido desde RabbitMQ.", ex);
+        }
     }
 }
