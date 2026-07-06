@@ -1,6 +1,9 @@
 package com.duoc.learningplatformcloud.service;
 
+import com.duoc.learningplatformcloud.dto.CursoResumenResponse;
+import com.duoc.learningplatformcloud.dto.MensajeriaResumenResponse;
 import com.duoc.learningplatformcloud.dto.ResumenMqMessage;
+import com.duoc.learningplatformcloud.dto.ResumenMqResponse;
 import com.duoc.learningplatformcloud.exception.RecursoNoEncontradoException;
 import com.duoc.learningplatformcloud.model.DetalleInscripcion;
 import com.duoc.learningplatformcloud.model.Inscripcion;
@@ -27,6 +30,11 @@ import java.util.Objects;
 @RequiredArgsConstructor
 @SuppressWarnings("null")
 public class ResumenMqService {
+
+    private static final String SEPARADOR_CAMPO_CURSO = " | ";
+    private static final String PREFIJO_INSTRUCTOR = "Instructor: ";
+    private static final String PREFIJO_DURACION = "Duración: ";
+    private static final String PREFIJO_COSTO = "Costo: $";
 
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
@@ -90,12 +98,13 @@ public class ResumenMqService {
     }
 
     @Transactional(readOnly = true)
-    public List<ResumenCompraMq> listarResumenesGuardados() {
+    public List<ResumenMqResponse> listarResumenesGuardados() {
         return resumenCompraMqRepository.findAll()
                 .stream()
                 .sorted(Comparator.comparing(
                         resumen -> Objects.requireNonNullElse(resumen.getId(), 0L)
                 ))
+                .map(this::convertirARespuestaOrdenada)
                 .toList();
     }
 
@@ -145,9 +154,9 @@ public class ResumenMqService {
 
     private String construirLineaCurso(DetalleInscripcion detalle) {
         return detalle.getCurso().getNombre()
-                + " | Instructor: " + detalle.getCurso().getInstructor()
-                + " | Duración: " + detalle.getCurso().getDuracionHoras() + " horas"
-                + " | Costo: $" + detalle.getCostoCurso();
+                + SEPARADOR_CAMPO_CURSO + PREFIJO_INSTRUCTOR + detalle.getCurso().getInstructor()
+                + SEPARADOR_CAMPO_CURSO + PREFIJO_DURACION + detalle.getCurso().getDuracionHoras() + " horas"
+                + SEPARADOR_CAMPO_CURSO + PREFIJO_COSTO + detalle.getCostoCurso();
     }
 
     private String construirContenidoResumen(Inscripcion inscripcion, List<String> cursos) {
@@ -199,6 +208,103 @@ public class ResumenMqService {
             );
         } catch (JsonProcessingException ex) {
             throw new IllegalStateException("No fue posible leer el mensaje JSON recibido desde RabbitMQ.", ex);
+        }
+    }
+
+    private ResumenMqResponse convertirARespuestaOrdenada(ResumenCompraMq resumen) {
+        return new ResumenMqResponse(
+                resumen.getId(),
+                resumen.getInscripcionId(),
+                resumen.getEstudiante(),
+                resumen.getFechaInscripcion(),
+                convertirCursosARespuesta(resumen.getCursosInscritos()),
+                resumen.getTotal(),
+                new MensajeriaResumenResponse(
+                        exchangeName,
+                        routingKey,
+                        queueName,
+                        resumen.getFechaEnvioMq(),
+                        resumen.getFechaConsumoMq(),
+                        resumen.getEstado()
+                )
+        );
+    }
+
+    private List<CursoResumenResponse> convertirCursosARespuesta(String cursosInscritos) {
+        if (cursosInscritos == null || cursosInscritos.isBlank()) {
+            return List.of();
+        }
+
+        return cursosInscritos.lines()
+                .map(String::trim)
+                .filter(linea -> !linea.isBlank())
+                .map(this::convertirLineaCursoARespuesta)
+                .toList();
+    }
+
+    private CursoResumenResponse convertirLineaCursoARespuesta(String lineaCurso) {
+        String[] partes = lineaCurso.split("\\Q" + SEPARADOR_CAMPO_CURSO + "\\E");
+
+        String nombre = obtenerParte(partes, 0);
+        String instructor = limpiarPrefijo(obtenerParte(partes, 1), PREFIJO_INSTRUCTOR);
+        Integer duracionHoras = convertirDuracion(limpiarPrefijo(obtenerParte(partes, 2), PREFIJO_DURACION));
+        Double costo = convertirCosto(limpiarPrefijo(obtenerParte(partes, 3), PREFIJO_COSTO));
+
+        return new CursoResumenResponse(
+                nombre,
+                instructor,
+                duracionHoras,
+                costo
+        );
+    }
+
+    private String obtenerParte(String[] partes, int indice) {
+        if (partes == null || indice < 0 || indice >= partes.length) {
+            return "";
+        }
+
+        return partes[indice] == null ? "" : partes[indice].trim();
+    }
+
+    private String limpiarPrefijo(String valor, String prefijo) {
+        if (valor == null || valor.isBlank()) {
+            return "";
+        }
+
+        return valor.replace(prefijo, "").trim();
+    }
+
+    private Integer convertirDuracion(String valor) {
+        if (valor == null || valor.isBlank()) {
+            return 0;
+        }
+
+        String soloNumero = valor
+                .replace("horas", "")
+                .replace("hora", "")
+                .trim();
+
+        try {
+            return Integer.parseInt(soloNumero);
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    private Double convertirCosto(String valor) {
+        if (valor == null || valor.isBlank()) {
+            return 0.0;
+        }
+
+        String soloNumero = valor
+                .replace("$", "")
+                .replace(",", ".")
+                .trim();
+
+        try {
+            return Double.parseDouble(soloNumero);
+        } catch (NumberFormatException ex) {
+            return 0.0;
         }
     }
 }

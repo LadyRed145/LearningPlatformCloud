@@ -1,6 +1,7 @@
 package com.duoc.learningplatformcloud.controller;
 
 import com.duoc.learningplatformcloud.dto.ResumenMqMessage;
+import com.duoc.learningplatformcloud.dto.ResumenMqResponse;
 import com.duoc.learningplatformcloud.model.ResumenCompraMq;
 import com.duoc.learningplatformcloud.service.ResumenMqService;
 import lombok.RequiredArgsConstructor;
@@ -50,7 +51,7 @@ public class ResumenMqController {
     }
 
     @GetMapping
-    public List<ResumenCompraMq> listarResumenesGuardados() {
+    public List<ResumenMqResponse> listarResumenesGuardados() {
         return resumenMqService.listarResumenesGuardados();
     }
 
