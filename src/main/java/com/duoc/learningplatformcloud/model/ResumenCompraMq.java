@@ -52,6 +52,7 @@ public class ResumenCompraMq {
         if (fechaConsumoMq == null) {
             fechaConsumoMq = LocalDateTime.now();
         }
+
         if (estado == null || estado.isBlank()) {
             estado = "CONSUMIDO_GUARDADO";
         }
