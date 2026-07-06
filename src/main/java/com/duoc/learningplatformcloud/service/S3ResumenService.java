@@ -10,6 +10,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
@@ -19,6 +20,7 @@ import java.util.Objects;
 public class S3ResumenService {
 
     private static final String CONTENT_TYPE_TEXT = "text/plain; charset=utf-8";
+    private static final String CONTENT_TYPE_JSON = "application/json; charset=utf-8";
 
     private final S3Client s3Client;
 
@@ -45,7 +47,6 @@ public class S3ResumenService {
         validarParametros(resumenId, archivoResumen);
 
         String key = construirKey(resumenId);
-
         validarExistencia(key);
 
         PutObjectRequest request = PutObjectRequest.builder()
@@ -59,13 +60,39 @@ public class S3ResumenService {
         return key;
     }
 
+    public String subirTexto(String key, String contenido) {
+        return subirContenido(key, contenido, CONTENT_TYPE_TEXT);
+    }
+
+    public String subirJson(String key, String contenidoJson) {
+        return subirContenido(key, contenidoJson, CONTENT_TYPE_JSON);
+    }
+
+    public String subirContenido(String key, String contenido, String contentType) {
+        validarKey(key);
+
+        String contenidoSeguro = Objects.requireNonNullElse(contenido, "");
+
+        PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .contentType(contentType)
+                .build();
+
+        s3Client.putObject(
+                request,
+                RequestBody.fromBytes(contenidoSeguro.getBytes(StandardCharsets.UTF_8))
+        );
+
+        return key;
+    }
+
     public ByteArrayResource descargarResumen(Long resumenId) {
         if (resumenId == null) {
             throw new IllegalArgumentException("El ID del resumen no puede ser nulo.");
         }
 
         String key = construirKey(resumenId);
-
         validarExistencia(key);
 
         GetObjectRequest request = GetObjectRequest.builder()
@@ -74,6 +101,7 @@ public class S3ResumenService {
                 .build();
 
         ResponseBytes<GetObjectResponse> archivo = s3Client.getObjectAsBytes(request);
+
         byte[] contenido = Objects.requireNonNull(
                 archivo.asByteArray(),
                 "El archivo descargado desde S3 no puede ser nulo."
@@ -88,7 +116,6 @@ public class S3ResumenService {
         }
 
         String key = construirKey(resumenId);
-
         validarExistencia(key);
 
         DeleteObjectRequest request = DeleteObjectRequest.builder()
@@ -109,6 +136,12 @@ public class S3ResumenService {
 
     private String construirKey(Long resumenId) {
         return resumenId + "/" + construirNombreArchivo(resumenId);
+    }
+
+    private void validarKey(String key) {
+        if (key == null || key.isBlank()) {
+            throw new IllegalArgumentException("La key de S3 no puede ser nula ni vacía.");
+        }
     }
 
     private void validarParametros(Long resumenId, Path archivoResumen) {
