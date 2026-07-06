@@ -21,12 +21,20 @@ services:
       DB_URL: 'jdbc:oracle:thin:@semana1_high?TNS_ADMIN=/app/wallet'
       DB_USERNAME: 'ADMIN'
       DB_PASSWORD: 'OracleCloud123'
+
       AWS_REGION: 'us-east-1'
       AWS_S3_BUCKET_NAME: 'learningplatformcloud-grupo13'
+
+      AZURE_B2C_CLIENT_ID: ${AZURE_B2C_CLIENT_ID}
+      AZURE_B2C_ISSUER_URI: ${AZURE_B2C_ISSUER_URI}
+      AZURE_B2C_JWK_SET_URI: ${AZURE_B2C_JWK_SET_URI}
+
       RABBITMQ_HOST: 'rabbitmq'
       RABBITMQ_PORT: '5672'
       RABBITMQ_USERNAME: 'admin'
       RABBITMQ_PASSWORD: 'Admin12345'
+
     volumes:
       - "/home/natalia/Archivos/Desarrollo Cloud Native/Wallets Registradas/Wallet_Semana1:/app/wallet:ro"
+
     restart: "no"
