@@ -615,7 +615,7 @@ Additional technical documentation can be maintained inside the:
 docs/
 ```
 
-directory.
+📄 [Final Technical Report](./docs/LearningPlatformCloud_Documentacion_Final.pdf)
 
 ---
 
