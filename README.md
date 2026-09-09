@@ -1,6 +1,6 @@
 # LearningPlatformCloud
 
-Cloud-oriented backend for an online learning platform, developed with **Java 17 and Spring Boot**, integrating relational persistence, object storage, messaging, OAuth2/JWT security, containerization and automated deployment across cloud services.
+Cloud-oriented backend for an online learning platform, developed with **Java 17 and Spring Boot**, integrating relational persistence, object storage, asynchronous messaging, OAuth2/JWT security, containerization and cloud deployment.
 
 > Backend • Cloud • Security • Messaging • CI/CD
 
@@ -10,65 +10,83 @@ Cloud-oriented backend for an online learning platform, developed with **Java 17
 
 **LearningPlatformCloud** is an academic backend project focused on the evolution of a traditional layered Spring Boot application into a cloud-oriented service.
 
-The current version integrates:
+The implemented solution integrates:
 
 - Oracle Autonomous Database with Oracle Wallet
 - AWS S3 object storage
-- Azure AD B2C authentication
+- Amazon API Gateway
+- AWS EC2
+- Azure AD B2C authentication and access control
 - OAuth2 Resource Server and JWT validation
-- RabbitMQ messaging
-- Docker containerization
+- RabbitMQ asynchronous messaging
+- Docker and Docker Compose
 - GitHub Actions CI/CD
-- Automated deployment to AWS EC2
+- Docker Hub
 - Spring Boot Actuator health monitoring
 
-The project emphasizes **backend architecture, cloud integration, security, messaging and deployment automation**.
+The project emphasizes **backend architecture, cloud integration, security, asynchronous messaging and deployment automation**.
+
+> **Deployment status:** the AWS EC2 instance used during the academic deployment has since been decommissioned. The repository preserves the implementation and CI/CD workflow used during the project.
 
 ---
 
-## 🏗️ Current Architecture
+## 🏗️ Architecture
+
+The deployed academic environment used **Amazon API Gateway** as the public entry point to the backend running on AWS EC2.
 
 ```mermaid
 flowchart LR
 
-    Client[Client]
+    Client[Client / Postman]
 
-    B2C[Azure AD B2C]
+    B2C["Azure AD B2C
+    Authentication & Roles"]
+
+    Gateway["Amazon API Gateway"]
+
+    EC2["AWS EC2
+    Docker Environment"]
 
     API["LearningPlatformCloud
     Spring Boot 3.5.15
     Java 17"]
 
+    Rabbit["RabbitMQ
+    Direct Exchange + Durable Queue"]
+
+    Consumer["Message Consumer"]
+
     Oracle["Oracle Autonomous Database
     + Oracle Wallet"]
 
     S3["AWS S3
-    Enrollment summaries"]
-
-    Rabbit["RabbitMQ
-    Direct Exchange + Queue"]
+    Enrollment Summaries"]
 
     GHA["GitHub Actions"]
 
     DockerHub["Docker Hub"]
 
-    EC2["AWS EC2"]
-
     Client -->|Authenticate| B2C
     B2C -->|JWT| Client
 
-    Client -->|Bearer JWT| API
+    Client -->|HTTP + Bearer JWT| Gateway
+    Gateway --> EC2
+    EC2 --> API
 
     API -.->|Issuer + JWK + Audience validation| B2C
 
     API --> Oracle
     API --> S3
-    API --> Rabbit
+
+    API -->|Publish| Rabbit
+    Rabbit --> Consumer
+    Consumer --> Oracle
 
     GHA -->|Build & Push| DockerHub
-    DockerHub -->|Pull| EC2
-    EC2 --> API
+    DockerHub -->|Deployment Image| EC2
 ```
+
+The RabbitMQ integration was incorporated into the existing cloud infrastructure while maintaining the communication flow through API Gateway, EC2, Oracle Cloud and AWS S3.
 
 ---
 
@@ -113,13 +131,20 @@ RabbitMQ evidence is stored separately as:
 mq/evidencia-rabbitmq.txt
 ```
 
-### 📨 RabbitMQ
+---
 
-The application uses a durable queue with a direct exchange.
+## 📨 RabbitMQ
+
+RabbitMQ was integrated as an asynchronous messaging service using **Spring AMQP**.
+
+The topology consists of:
 
 ```text
 Exchange:
 learning.resumenes.exchange
+
+Type:
+direct
 
 Routing Key:
 learning.resumenes.routing
@@ -128,29 +153,80 @@ Queue:
 learning.resumenes.queue
 ```
 
-The current implementation provides:
+The implementation provides:
 
 - Message production
+- Direct exchange routing
+- Durable queue storage
 - Queue state inspection
 - API-triggered message consumption
 - Persistence of consumed summaries in Oracle
 - S3 evidence generation
 
-The application is containerized together with RabbitMQ using **Docker Compose**, allowing both services to be started as part of the same local/cloud stack.
+The backend publishes each enrollment summary to the configured exchange using the routing key.
 
-### 🔐 Azure AD B2C & JWT
+RabbitMQ evaluates the routing key and forwards the message through the corresponding binding to:
 
-The application is configured as an **OAuth2 Resource Server**.
+```text
+learning.resumenes.queue
+```
 
-JWT validation checks:
+where it remains available until it is processed.
 
-- Token signature through JWK
-- Expected issuer
-- Expected audience / Azure B2C Client ID
+### Docker Integration
 
-Public endpoints are limited to health and monitoring endpoints.
+The application and RabbitMQ are containerized using **Docker and Docker Compose**, allowing the services to operate together as part of the same deployment stack.
+
+RabbitMQ uses:
+
+```text
+5672  → AMQP communication
+15672 → RabbitMQ Management
+```
+
+During the academic cloud deployment, RabbitMQ Management was also validated remotely through an SSH tunnel to the EC2 instance.
+
+---
+
+## 🔐 Azure AD B2C & JWT
+
+The backend is configured as an **OAuth2 Resource Server**.
+
+JWT validation includes:
+
+- Token signature validation through JWK
+- Expected issuer validation
+- Expected audience validation
+- Azure AD B2C Client ID validation
+
+Public access is limited to health and monitoring endpoints.
 
 Authentication and access control are integrated with **Azure AD B2C**, with roles managed through Azure configuration.
+
+Business endpoints require authenticated requests.
+
+---
+
+## 🌐 Amazon API Gateway
+
+During the deployed cloud environment, **Amazon API Gateway** acted as the public entry point to the API.
+
+The general request flow was:
+
+```text
+Client / Postman
+        │
+        ▼
+Amazon API Gateway
+        │
+        ▼
+AWS EC2
+        │
+        ▼
+Spring Boot
+```
+
+API Gateway exposed the application endpoints while the backend services operated inside the EC2 deployment environment.
 
 ---
 
@@ -262,6 +338,7 @@ Stores enrollment summaries consumed from RabbitMQ, including:
 - JWK validation
 - Issuer validation
 - Audience validation
+- Azure-managed access control
 
 ### Data
 
@@ -273,15 +350,19 @@ Stores enrollment summaries consumed from RabbitMQ, including:
 
 ### Cloud
 
-- AWS S3
+- Amazon API Gateway
 - AWS EC2
+- AWS S3
 - Microsoft Azure AD B2C
+- Oracle Cloud
 
 ### Messaging
 
+- Spring AMQP
 - RabbitMQ
 - AMQP
 - Direct Exchange
+- Routing Key
 - Durable Queue
 
 ### DevOps
@@ -290,13 +371,21 @@ Stores enrollment summaries consumed from RabbitMQ, including:
 - Docker Compose
 - Docker Hub
 - GitHub Actions
+- Git
+- GitHub
 - SSH-based EC2 deployment
+
+### Testing & Validation
+
+- Postman
+- RabbitMQ Management
+- Spring Boot Actuator
 
 ---
 
 ## 🔄 CI/CD Pipeline
 
-Every push to the `main` branch triggers the deployment workflow.
+The repository contains the GitHub Actions workflow used during the active cloud deployment.
 
 ```text
 Push to main
@@ -325,32 +414,25 @@ GitHub Actions
              └── docker image prune
 ```
 
-The Docker image is published as:
+The Docker image was published as:
 
 ```text
 ladyred/learningplatformcloud:latest
 ```
 
+> The original EC2 deployment environment has been decommissioned after completion of the academic project. The workflow remains in the repository as part of the project's implementation history.
+
 ---
 
-## 🔐 Configuration & Secrets
+## ⚙️ Runtime Configuration
 
-Secrets are **not stored in the repository**.
+The application uses environment variables for multiple infrastructure and authentication settings.
 
-Local and deployment configuration is supplied through environment variables.
-
-Create your local configuration from:
-
-```bash
-cp .env.example .env
-```
-
-Required variables include:
+Relevant configuration includes:
 
 | Variable | Purpose |
 |---|---|
-| `ORACLE_TNS_ALIAS` | Oracle TNS connection alias |
-| `ORACLE_WALLET_PATH` | Local Oracle Wallet path |
+| `DB_URL` | Oracle database connection |
 | `DB_USERNAME` | Oracle database username |
 | `DB_PASSWORD` | Oracle database password |
 | `AWS_REGION` | AWS region |
@@ -358,15 +440,15 @@ Required variables include:
 | `AZURE_B2C_CLIENT_ID` | Azure AD B2C application/client ID |
 | `AZURE_B2C_ISSUER_URI` | JWT issuer |
 | `AZURE_B2C_JWK_SET_URI` | JWK endpoint |
+| `RABBITMQ_HOST` | RabbitMQ host |
+| `RABBITMQ_PORT` | RabbitMQ AMQP port |
 | `RABBITMQ_USERNAME` | RabbitMQ username |
 | `RABBITMQ_PASSWORD` | RabbitMQ password |
 | `RABBITMQ_QUEUE` | RabbitMQ queue |
 | `RABBITMQ_EXCHANGE` | RabbitMQ exchange |
 | `RABBITMQ_ROUTING_KEY` | RabbitMQ routing key |
 
-AWS credentials are resolved through the **AWS SDK default credential provider chain** rather than being hardcoded in the application.
-
-For AWS deployments, an IAM role or another supported credential source should be preferred.
+The local Fish startup script loads environment-specific values and starts RabbitMQ before launching the Spring Boot backend.
 
 ---
 
@@ -386,17 +468,11 @@ For AWS deployments, an IAM role or another supported credential source should b
 Clone the repository:
 
 ```bash
-git clone https://github.com/LadyRed145/LearningPlatformCloud_Grupo13.git
-cd LearningPlatformCloud_Grupo13
+git clone https://github.com/LadyRed145/LearningPlatformCloud.git
+cd LearningPlatformCloud
 ```
 
-Create your environment file:
-
-```bash
-cp .env.example .env
-```
-
-Configure the values in `.env`.
+Configure the required local environment values.
 
 Then execute:
 
@@ -405,15 +481,17 @@ chmod +x scripts/run-local.fish
 ./scripts/run-local.fish
 ```
 
-The script:
+The local script:
 
-1. Loads local environment variables
-2. Validates Oracle Wallet availability
-3. Starts RabbitMQ through Docker Compose
-4. Waits until RabbitMQ is ready
-5. Starts the Spring Boot backend
+1. Stops previous Docker services to avoid port conflicts
+2. Loads database configuration
+3. Loads AWS configuration
+4. Loads Azure AD B2C configuration
+5. Loads RabbitMQ configuration
+6. Starts the RabbitMQ container
+7. Starts the Spring Boot backend
 
-Default backend address:
+The backend runs locally on:
 
 ```text
 http://localhost:8081
@@ -441,13 +519,26 @@ The previous stage included:
 - Spring Boot Actuator
 - Functional API validation with Postman
 
-The current version expanded that foundation toward cloud integration, external identity validation, object storage, messaging, containerization and automated deployment.
+The solution was later expanded toward a cloud-oriented architecture incorporating:
+
+- Amazon API Gateway
+- AWS EC2
+- AWS S3
+- Azure AD B2C
+- OAuth2/JWT
+- RabbitMQ
+- Docker
+- Docker Compose
+- GitHub Actions
+- Docker Hub
+
+This evolution allowed the project to move from a traditional backend implementation toward a distributed cloud deployment with external authentication, object storage, asynchronous messaging and automated delivery.
 
 ---
 
 ## 🧠 Engineering Challenges
 
-Several technical issues were identified and resolved during the evolution of the project, including:
+Several technical issues were identified and resolved throughout the project's evolution, including:
 
 - Oracle Wallet dependency and path configuration
 - Oracle JDBC security dependencies
@@ -457,19 +548,34 @@ Several technical issues were identified and resolved during the evolution of th
 - Duplicate REST context paths
 - Repository and entity normalization
 - Authentication architecture refactoring
+- Integration of cloud services
+- Messaging topology configuration
+- RabbitMQ routing and queue validation
 - Environment portability between local and cloud deployments
 
-These issues contributed to the progressive normalization and stabilization of the backend architecture.
+These challenges contributed to the progressive normalization and stabilization of the backend architecture.
 
 ---
 
 ## 🧪 Testing & Validation
 
-Earlier development stages included functional API validation with **Postman**, covering HTTP operations and Oracle persistence.
+Functional testing was performed with **Postman** against endpoints exposed through Amazon API Gateway.
 
-The current automated test suite remains intentionally minimal and currently contains a Spring application-context test.
+RabbitMQ validation included:
 
-Expanding automated unit and integration coverage is part of the project's future technical improvement path.
+- Sending summaries from multiple enrollments
+- Confirming independent message generation
+- Inspecting the queue state through the API
+- Comparing the reported queue state with RabbitMQ Management
+- Verifying messages directly from the RabbitMQ container deployed on EC2
+
+During the final validation, three independent enrollment summaries were sent to RabbitMQ and the queue-monitoring endpoint reported three pending messages.
+
+The result was verified against both **RabbitMQ Management** and the deployed container, confirming that the messages had been correctly routed and stored.
+
+Earlier project stages also included functional validation of HTTP operations and Oracle persistence using Postman.
+
+The current automated test suite contains a Spring application-context test.
 
 ---
 
@@ -478,24 +584,38 @@ Expanding automated unit and integration coverage is part of the project's futur
 - Expand unit and integration test coverage
 - Integrate automated tests into CI
 - Add container health checks
-- Run the application container as a non-root user
-- Introduce immutable Docker image tags
-- Harden production-specific JPA settings
 - Expand observability and monitoring
 - Add OpenAPI documentation
+- Introduce additional production-hardening practices
 
 ---
 
 ## 🎓 Academic Context
 
-This project was developed as part of backend development coursework at **Duoc UC, Chile**.
+This project was developed as part of the **Analista Programador** program at **Duoc UC, Chile**.
 
-An earlier documented stage of the project was developed collaboratively by:
+The cloud-native implementation was developed during the **Desarrollo Cloud Native (CDY2204)** course.
+
+The project was developed collaboratively by:
 
 - **Natalia Alvarado**
 - **Egor Llancapichun**
 
-The repository reflects the technical evolution of the solution through different academic and cloud-integration stages.
+The repository reflects the technical evolution of the solution through different backend and cloud-integration stages.
+
+---
+
+## 📚 Documentation
+
+The repository README consolidates the implemented architecture, cloud integrations, messaging flow, endpoints, testing and deployment history of the project.
+
+Additional technical documentation can be maintained inside the:
+
+```text
+docs/
+```
+
+directory.
 
 ---
 
